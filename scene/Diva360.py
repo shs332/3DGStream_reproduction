@@ -10,36 +10,7 @@ from torchvision import transforms as T
 import json
 # from scipy.spatial.transform import Rotation
 import torch
-
-
-# def diva360_to_colmap(c2w):
-#     c2w[2, :] *= -1  # flip whole world upside down
-#     c2w = c2w[[1, 0, 2, 3], :]
-#     c2w[0:3, 1] *= -1  # flip the y and z axis
-#     c2w[0:3, 2] *= -1
-
-#     w2c = np.linalg.inv(c2w)
-#     rot = w2c[:3, :3]
-#     tvec = w2c[:3, -1]
-
-#     rotation = Rotation.from_matrix(rot)
-#     qvec = rotation.as_quat()  # Returns [x, y, z, w]
-#     qvec = np.array(qvec)[[3, 0, 1, 2]]
-
-#     return qvec, tvec
-
-# def qvec2rotmat(qvec):
-#     return np.array([
-#         [1 - 2 * qvec[2]**2 - 2 * qvec[3]**2,
-#         2 * qvec[1] * qvec[2] - 2 * qvec[0] * qvec[3],
-#         2 * qvec[3] * qvec[1] + 2 * qvec[0] * qvec[2]],
-#         [2 * qvec[1] * qvec[2] + 2 * qvec[0] * qvec[3],
-#         1 - 2 * qvec[1]**2 - 2 * qvec[3]**2,
-#         2 * qvec[2] * qvec[3] - 2 * qvec[0] * qvec[1]],
-#         [2 * qvec[3] * qvec[1] - 2 * qvec[0] * qvec[2],
-#         2 * qvec[2] * qvec[3] + 2 * qvec[0] * qvec[1],
-#         1 - 2 * qvec[1]**2 - 2 * qvec[2]**2]])
-
+from scene.cameras import Camera
 
 class Diva360_dataset(Dataset):
     def __init__(
@@ -72,7 +43,7 @@ class Diva360_dataset(Dataset):
         
         # breakpoint()
 
-        self.image_paths, self.image_poses, self.image_times, self.cxs, self.cys, self.fxs, self.fys = image_info_all
+        self.image_paths, self.image_poses, self.cxs, self.cys, self.fxs, self.fys = image_info_all
 
         # 비디오 카메라 정보 초기화
         # if split == "test":
@@ -87,7 +58,7 @@ class Diva360_dataset(Dataset):
         
         image_paths = []
         image_poses = []
-        image_times = []
+        # image_times = []
         cx_px = []
         cy_px = []
         fxs = []
@@ -97,40 +68,42 @@ class Diva360_dataset(Dataset):
         image_length = 1
 
         if cam_idx is None: # original logic
-            for i, frame in enumerate(meta["frames"]): ## every element in "frames"            
-                # transform_matrix에서 카메라 포즈 가져오기, Blender/OpenGL c2w
-                c2w = np.array(frame["transform_matrix"])
-                cx = frame["cx"]
-                cy = frame["cy"]
-                fx = frame["fl_x"]
-                fy = frame["fl_y"]
+            # for i, frame in enumerate(meta["frames"]): ## every element in "frames"            
+            #     # transform_matrix에서 카메라 포즈 가져오기, Blender/OpenGL c2w
+            #     c2w = np.array(frame["transform_matrix"])
+            #     cx = frame["cx"]
+            #     cy = frame["cy"]
+            #     fx = frame["fl_x"]
+            #     fy = frame["fl_y"]
 
-                # OpenGL에서 COLMAP 좌표계로 변환
-                c2w[:3, 1:3] *= -1
+            #     # OpenGL에서 COLMAP 좌표계로 변환
+            #     c2w[:3, 1:3] *= -1
                 
-                # world-to-camera 변환
-                w2c = np.linalg.inv(c2w)
-                R = np.transpose(w2c[:3, :3])
-                T = w2c[:3, 3]
-                # breakpoint()
+            #     # world-to-camera 변환
+            #     w2c = np.linalg.inv(c2w)
+            #     R = np.transpose(w2c[:3, :3])
+            #     T = w2c[:3, 3]
+            #     # breakpoint()
 
-                file_path = frame["file_path"]
-                cam_num = os.path.dirname(file_path)
-                images_folder = os.path.join(cam_folder, cam_num) # .../cam01
+            #     file_path = frame["file_path"]
+            #     cam_num = os.path.dirname(file_path)
+            #     images_folder = os.path.join(cam_folder, cam_num) # .../cam01
 
-                for frame_idx in range(image_length):
-                    # 리스트에 추가
-                    image_path = os.path.join(images_folder, f"frame_{str(frame_idx).zfill(5)}.png") # start from frame_00000.png 
-                    image_paths.append(image_path)
-                    image_poses.append((R, T))
-                    image_times.append(float((frame_idx+1)/image_length))
-                    cx_px.append(cx)
-                    cy_px.append(cy)
-                    fxs.append(fx)
-                    fys.append(fy)
-                # breakpoint()
-            # breakpoint()
-            return image_paths, image_poses, image_times, cx_px, cy_px, fxs, fys
+            #     for frame_idx in range(image_length):
+            #         # 리스트에 추가
+            #         image_path = os.path.join(images_folder, f"frame_{str(frame_idx).zfill(5)}.png") # start from frame_00000.png 
+            #         image_paths.append(image_path)
+            #         image_poses.append((R, T))
+            #         image_times.append(float((frame_idx+1)/image_length))
+            #         cx_px.append(cx)
+            #         cy_px.append(cy)
+            #         fxs.append(fx)
+            #         fys.append(fy)
+            #     # breakpoint()
+            # # breakpoint()
+            # return image_paths, image_poses, image_times, cx_px, cy_px, fxs, fys
+            pass
+        
         elif split == "train": # Gaussian recon stage, all image of frame_from + one image of frame_to in cam_idx
 
             last_element = {}
@@ -167,7 +140,7 @@ class Diva360_dataset(Dataset):
                 image_path = os.path.join(images_folder, f"frame_{str(frame_from).zfill(5)}.png")
                 image_paths.append(image_path)
                 image_poses.append((R, T))
-                image_times.append(0.5)
+                # image_times.append(0.5)
                 cx_px.append(cx)
                 cy_px.append(cy)
                 fxs.append(fx)
@@ -175,14 +148,14 @@ class Diva360_dataset(Dataset):
 
             image_paths.append(last_element['image_path'])
             image_poses.append(last_element['pose'])
-            image_times.append(1)
+            # image_times.append(1)
             cx_px.append(last_element['cx'])
             cy_px.append(last_element['cy'])
             fxs.append(last_element['fx'])
             fys.append(last_element['fy'])
 
             # breakpoint()
-            return image_paths, image_poses, image_times, cx_px, cy_px, fxs, fys
+            return image_paths, image_poses, cx_px, cy_px, fxs, fys
         
         elif split == "test": # deform stage, N-1 image of frame_to not in cam_idx
             cam_idx = f"cam{cam_idx}" # cam01
@@ -211,14 +184,14 @@ class Diva360_dataset(Dataset):
                     image_path = os.path.join(images_folder, f"frame_{str(frame_to).zfill(5)}.png") # start from frame_00000.png 
                     image_paths.append(image_path)
                     image_poses.append((R, T))
-                    image_times.append(1)
+                    # image_times.append(1)
                     cx_px.append(cx)
                     cy_px.append(cy)
                     fxs.append(fx)
                     fys.append(fy)
                 
             # breakpoint()
-            return image_paths, image_poses, image_times, cx_px, cy_px, fxs, fys
+            return image_paths, image_poses, cx_px, cy_px, fxs, fys
     
     def get_video_cam_infos(self, datadir):
         with open(os.path.join(datadir, "transforms_test.json"), "r") as f:
@@ -268,19 +241,27 @@ class Diva360_dataset(Dataset):
         return len(self.image_paths)
     
     def __getitem__(self, index):
-        img = Image.open(self.image_paths[index]) #.convert("RGB")
-        im_data = np.array(img.convert("RGBA"))
-        
-        bg = np.array([1,1,1]) if self.white_background else np.array([0, 0, 0])
-        norm_data = im_data / 255.0
-        arr = norm_data[:,:,:3] * norm_data[:, :, 3:4] + bg * (1 - norm_data[:, :, 3:4])
+        with Image.open(self.image_paths[index]) as img:
+            im_data = np.array(img.convert("RGBA"))
+            w2c, cx, cy, fx, fy = self.image_poses[index], self.cxs[index], self.cys[index], self.fxs[index], self.fys[index]
 
-        img = torch.from_numpy(arr).permute(2, 0, 1)  # [3, H, W]
-        # image_width = img.shape[2]
-        # image_height = img.shape[1]
-        
-        return img, self.image_poses[index], self.image_times[index], \
-            self.cxs[index], self.cys[index], self.fxs[index], self.fys[index]
+            bg = np.array([1,1,1]) if self.white_background else np.array([0, 0, 0])
+            norm_data = im_data / 255.0
+            arr = norm_data[:,:,:3] * norm_data[:, :, 3:4] + bg * (1 - norm_data[:, :, 3:4])
+
+            # breakpoint()
+            img = torch.from_numpy(arr).permute(2, 0, 1).float()  # [3, H, W]
+            
+            R,T = w2c
+            image_width = img.shape[2]
+            image_height = img.shape[1]
+            FovX = focal2fov(fx, image_width)
+            FovY = focal2fov(fy, image_height)
+            mask=None
+                    
+        return Camera(colmap_id=index,R=R,T=T,FoVx=FovX,FoVy=FovY,image=img,gt_alpha_mask=None,
+                            image_name=f"{index}",uid=index,data_device=torch.device("cuda"),
+                            cx=cx, cy=cy)
     
     def load_pose(self, index):
         return self.image_poses[index]

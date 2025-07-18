@@ -20,9 +20,9 @@ from utils.camera_utils import cameraList_from_camInfos, camera_to_JSON
 class Scene:
 
     gaussians : GaussianModel
-
-    def __init__(self, args : ModelParams, gaussians : GaussianModel, load_iteration=None, shuffle=True, resolution_scales=[1.0]):
-        """b
+    def __init__(self, args : ModelParams, gaussians : GaussianModel, load_iteration=None, shuffle=True, resolution_scales=[1.0],
+                 frame_from=None, frame_to=None, cam_idx=None, GESI=False):
+        """
         :param path: Path to colmap scene main folder.
         """
         self.model_path = args.model_path
@@ -43,7 +43,13 @@ class Scene:
         self.train_cameras = {}
         self.test_cameras = {}
 
-        if os.path.exists(os.path.join(args.source_path, "sparse")):
+        # Diva360 
+        if GESI:
+            # breakpoint()
+            print("Single Image Deformation Experiment")
+            scene_info = sceneLoadTypeCallbacks["Diva360"](args.source_path, frame_from, frame_to, cam_idx, True)
+
+        elif os.path.exists(os.path.join(args.source_path, "sparse")):
             scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval, ply_name=args.ply_name)
         elif os.path.exists(os.path.join(args.source_path, "transforms_train.json")):
             print("Found transforms_train.json file, assuming Blender data set!")
@@ -51,34 +57,40 @@ class Scene:
         else:
             assert False, "Could not recognize scene type!"
 
-        if not self.loaded_iter:
-            with open(scene_info.ply_path, 'rb') as src_file, open(os.path.join(self.output_path, "input.ply") , 'wb') as dest_file:
-                dest_file.write(src_file.read())
-            json_cams = []
-            camlist = []
-            if scene_info.test_cameras:
-                camlist.extend(scene_info.test_cameras)
-            if scene_info.train_cameras:
-                camlist.extend(scene_info.train_cameras)
-            for id, cam in enumerate(camlist):
-                json_cams.append(camera_to_JSON(id, cam))
-            with open(os.path.join(self.output_path, "cameras.json"), 'w') as file:
-                json.dump(json_cams, file)
+        # if not self.loaded_iter:
+        #     with open(scene_info.ply_path, 'rb') as src_file, open(os.path.join(self.output_path, "input.ply") , 'wb') as dest_file:
+        #         dest_file.write(src_file.read())
+        #     json_cams = []
+        #     camlist = []
+        #     if scene_info.test_cameras:
+        #         camlist.extend(scene_info.test_cameras)
+        #     if scene_info.train_cameras:
+        #         camlist.extend(scene_info.train_cameras)
+        #     for id, cam in enumerate(camlist):
+        #         json_cams.append(camera_to_JSON(id, cam))
+        #     with open(os.path.join(self.output_path, "cameras.json"), 'w') as file:
+        #         json.dump(json_cams, file)
 
-        if shuffle:
-            random.shuffle(scene_info.train_cameras)  # Multi-res consistent random shuffling
-            random.shuffle(scene_info.test_cameras)  # Multi-res consistent random shuffling
+        # if shuffle:
+        #     random.shuffle(scene_info.train_cameras)  # Multi-res consistent random shuffling
+        #     random.shuffle(scene_info.test_cameras)  # Multi-res consistent random shuffling
 
         if args.extent == 0:
             self.cameras_extent = scene_info.nerf_normalization["radius"]
         else:
             self.cameras_extent = args.extent
-        for resolution_scale in resolution_scales:
-            print("Loading Training Cameras")
-            self.train_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.train_cameras, resolution_scale, args)
-            print("Loading Test Cameras")
-            self.test_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.test_cameras, resolution_scale, args)
 
+        if GESI:
+            # breakpoint()
+            self.train_cameras[1.0] = scene_info.train_cameras
+            self.test_cameras[1.0] = scene_info.test_cameras
+        else:
+            for resolution_scale in resolution_scales:
+                print("Loading Training Cameras")
+                self.train_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.train_cameras, resolution_scale, args)
+                print("Loading Test Cameras")
+                self.test_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.test_cameras, resolution_scale, args)
+                
         if self.loaded_iter:
             self.gaussians.load_ply(os.path.join(self.model_path,
                                                            "point_cloud",

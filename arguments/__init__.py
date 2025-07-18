@@ -47,7 +47,7 @@ class ParamGroup:
 class ModelParams(ParamGroup): 
     def __init__(self, parser, sentinel=False):
         self.extent = 0
-        self.sh_degree = 3
+        self.sh_degree = 1
         self._source_path = ""
         self._model_path = ""
         self._output_path = ""
@@ -55,7 +55,7 @@ class ModelParams(ParamGroup):
         self.ply_name = "points3D.ply"
         self._images = "images"
         self._resolution = -1
-        self._white_background = False
+        self._white_background = True
         self.data_device = "cuda"
         self.eval = False
         super().__init__(parser, "Loading Parameters", sentinel)

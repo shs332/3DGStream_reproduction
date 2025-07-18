@@ -275,7 +275,7 @@ def readDiva360info(datadir, frame_from, frame_to, cam_idx, white_background=Tru
     # 랜덤 포인트 클라우드 생성
     ply_path = os.path.join(datadir, "points3D_diva360.ply")
 
-    num_pts = 500000
+    num_pts = 50000
     print(f"Generating random point cloud ({num_pts})...")
 
     # We create random points inside the bounds of Diva360 (aabb=4)
@@ -298,12 +298,13 @@ def readDiva360info(datadir, frame_from, frame_to, cam_idx, white_background=Tru
 def format_infos_DFAandDiva(dataset,split):
     # loading
     cameras = []
-    image = dataset[0][0]
+    # breakpoint()
+    image = dataset[0].original_image
     if split == "train":
         for idx in tqdm(range(len(dataset))):
             image_path = None
             image_name = f"{idx}"
-            time = dataset.image_times[idx]
+            # time = dataset.image_times[idx]
             # matrix = np.linalg.inv(np.array(pose))
             R,T = dataset.load_pose(idx)
             # breakpoint()
