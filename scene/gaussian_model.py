@@ -747,6 +747,10 @@ class GaussianModel:
         else:
             model=tcnn.NetworkWithInputEncoding(n_input_dims=3, n_output_dims=8, encoding_config=ntc_conf["encoding"], network_config=ntc_conf["network"]).to(torch.device("cuda"))
         self.ntc=NeuralTransformationCache(model,self.get_xyz_bound()[0],self.get_xyz_bound()[1])
+
+        # ntc_path = f"ntc/{object_name}_F_4.pth"
+        # self.ntc.load_state_dict(torch.load(ntc_path))
+        
         self.ntc.load_state_dict(torch.load(training_args.ntc_path))
         self._xyz_bound_min = self.ntc.xyz_bound_min
         self._xyz_bound_max = self.ntc.xyz_bound_max

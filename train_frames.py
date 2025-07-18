@@ -25,25 +25,49 @@ from utils.debug_utils import save_tensor_img
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
 import re
+import wandb
+from torch.utils.data import Subset
+from utils.wandb_util import render_wandb_image, wandb_metric_report
+import copy
+
 try:
     from torch.utils.tensorboard import SummaryWriter
     TENSORBOARD_FOUND = True
 except ImportError:
     TENSORBOARD_FOUND = False
 
-def training_one_frame(dataset, opt, pipe, load_iteration, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
+def training_one_frame(dataset, opt, pipe, load_iteration, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from,
+                       frame_from=None, frame_to=None, cam_idx=None, GESI=False, wandb_group=None):
     start_time=time.time()
     last_s1_res = []
     last_s2_res = []
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree,opt.rotate_sh)
-    scene = Scene(dataset, gaussians, load_iteration=load_iteration, shuffle=False)
+
+    object_name = dataset.source_path.split("/")[-1]
+    scene = Scene(dataset, gaussians, load_iteration,
+                  frame_from=frame_from, frame_to=frame_to, cam_idx=cam_idx, GESI=GESI)
+    # wandb
+    wandb.init(
+        project=f"3DGStream_repr",
+        entity="shs332",
+        name=f"{object_name}_frame{frame_from}to{frame_to}_cam{cam_idx}",
+        group=wandb_group,
+        config={
+            "frame_from": frame_from,
+            "frame_to": frame_to,
+            "cam_idx": cam_idx
+        }
+    )
+ 
     gaussians.training_one_frame_setup(opt)
+    # breakpoint()
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
         gaussians.restore(model_params, opt)
 
+    # breakpoint()
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
@@ -55,6 +79,7 @@ def training_one_frame(dataset, opt, pipe, load_iteration, testing_iterations, s
     first_iter += 1
     s1_start_time=time.time()
     # Train the NTC
+    test_cams = scene.getTestCameras() #.copy()
     for iteration in range(first_iter, opt.iterations + 1):        
         iter_start.record()
 
@@ -69,14 +94,15 @@ def training_one_frame(dataset, opt, pipe, load_iteration, testing_iterations, s
         
         loss = torch.tensor(0.).cuda()
         
-        
-        # A simple 
         for batch_iteraion in range(opt.batch_size):
-        
             # Pick a random Camera
             if not viewpoint_stack:
-                viewpoint_stack = scene.getTrainCameras().copy()
-            viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
+                viewpoint_stack = scene.getTrainCameras() #.copy()
+                if GESI:
+                    viewpoint_stack = Subset(viewpoint_stack, [-1])
+
+            # breakpoint()
+            viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1)) if not GESI else viewpoint_stack[0] # single image to deform
             
             # Render
             if (iteration - 1) == debug_from:
@@ -95,14 +121,35 @@ def training_one_frame(dataset, opt, pipe, load_iteration, testing_iterations, s
         iter_end.record()
 
         with torch.no_grad():
+            wandb_dict = {}
+
+            ### TODO: metric log, rendered image log
             # Progress bar
             ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
-            if iteration % 10 == 0:
-                progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}"})
-                progress_bar.update(10)
-            if iteration == opt.iterations:
-                progress_bar.close()
+            
+            wandb_dict["train/Loss"] = loss.item()
+            wandb_dict["train/PSNR"] = psnr(image, gt_image).mean().item()
+            progress_bar.update()
 
+            if iteration % 50 == 0:
+                progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}"})
+                # progress_bar.update(10)
+                progress_bar.write(f"Evaluating metric for test views")
+                # only testview metric
+                metric_dict = wandb_metric_report(scene, render, [gaussians, pipe, background])
+                wandb_dict.update(metric_dict)
+                
+            if iteration == opt.iterations:
+                if GESI:
+                    train_rend = render_wandb_image(gaussians, viewpoint_stack,
+                                                    render, pipe, background, iteration, split="train")
+                    test_rends = render_wandb_image(gaussians, test_cams,
+                                                    render, pipe, background, iteration, split="test")
+                    wandb_dict.update(train_rend)
+                    wandb_dict.update(test_rends)
+                progress_bar.close()
+                
+            wandb.log(wandb_dict)
             # Log and save
             s1_res = training_report(tb_writer, iteration, Ll1, Lds, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background))
             if s1_res is not None:
@@ -138,6 +185,7 @@ def training_one_frame(dataset, opt, pipe, load_iteration, testing_iterations, s
         progress_bar = tqdm(range(opt.iterations, opt.iterations + opt.iterations_s2), desc="Training progress of Stage 2")    
     
     # Train the new Gaussians
+    viewpoint_stack = None
     for iteration in range(opt.iterations + 1, opt.iterations + opt.iterations_s2 + 1):        
         iter_start.record()
                      
@@ -150,8 +198,11 @@ def training_one_frame(dataset, opt, pipe, load_iteration, testing_iterations, s
         
             # Pick a random Camera
             if not viewpoint_stack:
-                viewpoint_stack = scene.getTrainCameras().copy()
-            viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
+                viewpoint_stack = scene.getTrainCameras() #.copy()
+                if GESI:
+                    viewpoint_stack = Subset(viewpoint_stack, [-1])
+                
+            viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1)) if not GESI else viewpoint_stack[0] # single image to deform
             
             # Render
             if (iteration - 1) == debug_from:
@@ -168,14 +219,32 @@ def training_one_frame(dataset, opt, pipe, load_iteration, testing_iterations, s
         iter_end.record()
 
         with torch.no_grad():
+            wandb_dict = {}
+
             # Progress bar
             ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
-            if (iteration - opt.iterations) % 10 == 0:
+            wandb_dict["train/Loss"] = loss.item()
+            wandb_dict["train/PSNR"] = psnr(image, gt_image).mean().item()
+            progress_bar.update()
+            
+            if (iteration - opt.iterations) % 50 == 0:
                 progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}"})
-                progress_bar.update(10)
+                progress_bar.write(f"Evaluating metric for test views")
+                # only testview metric
+                metric_dict = wandb_metric_report(scene, render, [gaussians, pipe, background])
+                wandb_dict.update(metric_dict)
+                
             if iteration == opt.iterations + opt.iterations_s2:
+                if GESI:
+                    train_rend = render_wandb_image(gaussians, viewpoint_stack,
+                                                    render, pipe, background, iteration, split="train")
+                    test_rends = render_wandb_image(gaussians, test_cams,
+                                                    render, pipe, background, iteration, split="test")
+                    wandb_dict.update(train_rend)
+                    wandb_dict.update(test_rends)
                 progress_bar.close()
-
+                
+            wandb.log(wandb_dict)
             # Log and save
             s2_res = training_report(tb_writer, iteration, Ll1, Lds, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background))
             if s2_res is not None:
@@ -198,7 +267,8 @@ def training_one_frame(dataset, opt, pipe, load_iteration, testing_iterations, s
     pre_time = s1_start_time - start_time
     s1_time = s1_end_time - s1_start_time
     s2_time = s2_end_time - s1_end_time
-           
+
+    wandb.finish()
     return last_s1_res, last_s2_res, pre_time, s1_time, s2_time
 
 def prepare_output_and_logger(args):    
@@ -288,8 +358,12 @@ def train_one_frame(lp,op,pp,args):
     print("Optimizing " + args.output_path)
     res_dict={}
     if(args.opt_type=='3DGStream'):
-        s1_ress, s2_ress, pre_time, s1_time, s2_time = training_one_frame(lp.extract(args), op.extract(args), pp.extract(args), args.load_iteration, args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from)
+        # breakpoint()
+        s1_ress, s2_ress, pre_time, s1_time, s2_time = \
+            training_one_frame(lp.extract(args), op.extract(args), pp.extract(args), args.load_iteration, args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from,\
+                    frame_from=args.frame_from, frame_to=args.frame_to, cam_idx=args.cam_idx, GESI=args.GESI, wandb_group=args.wandb_group)
 
+        ## TODO: metric log
         # All done
         print("\nTraining complete.")
         print(f"Preparation: {pre_time}")
@@ -313,31 +387,44 @@ def train_one_frame(lp,op,pp,args):
 
 def train_frames(lp, op, pp, args):
     # Initialize system state (RNG)
-    safe_state(args.quiet)
-    video_path=args.video_path
-    output_path=args.output_path
-    model_path=args.model_path
-    load_iteration = args.load_iteration
-    sub_paths = os.listdir(video_path)
-    pattern = re.compile(r'frame(\d+)')
-    frames = sorted(
-        (item for item in sub_paths if pattern.match(item)),
-        key=lambda x: int(pattern.match(x).group(1))
-    )
-    frames=frames[args.frame_start:args.frame_end]
-    if args.frame_start==1:
+    # safe_state(args.quiet)
+    if args.GESI is True:
+        
         args.load_iteration = args.first_load_iteration
-    for frame in frames:
+        frame = args.frame_to
         start_time = time.time()
-        args.source_path = os.path.join(video_path, frame)
-        args.output_path = os.path.join(output_path, frame)
-        args.model_path = model_path
+        # breakpoint()
+        args.source_path = args.video_path
         train_one_frame(lp,op,pp,args)
         print(f"Frame {frame} finished in {time.time()-start_time} seconds.")
         model_path = args.output_path
-        args.load_iteration = load_iteration
+        # args.load_iteration = load_iteration
         torch.cuda.empty_cache()
         
+    else:
+        video_path=args.video_path
+        output_path=args.output_path
+        model_path=args.model_path
+        load_iteration = args.load_iteration
+        sub_paths = os.listdir(video_path)
+        pattern = re.compile(r'frame(\d+)')
+        frames = sorted(
+            (item for item in sub_paths if pattern.match(item)),
+            key=lambda x: int(pattern.match(x).group(1))
+        )
+        frames=frames[args.frame_start:args.frame_end]
+        if args.frame_start==1:
+            args.load_iteration = args.first_load_iteration
+        for frame in frames:
+            start_time = time.time()
+            args.source_path = os.path.join(video_path, frame)
+            args.output_path = os.path.join(output_path, frame)
+            args.model_path = model_path
+            train_one_frame(lp,op,pp,args)
+            print(f"Frame {frame} finished in {time.time()-start_time} seconds.")
+            model_path = args.output_path
+            args.load_iteration = load_iteration
+            torch.cuda.empty_cache()
 
 if __name__ == "__main__":
     # Set up command line argument parser
@@ -359,9 +446,16 @@ if __name__ == "__main__":
     parser.add_argument("--start_checkpoint", type=str, default = None)
     parser.add_argument("--read_config", action='store_true', default=False)
     parser.add_argument("--config_path", type=str, default = None)
+
+    parser.add_argument("--frame_from", type=str)
+    parser.add_argument("--frame_to", type=str)
+    parser.add_argument("--cam_idx", type=str)
+    parser.add_argument("--GESI", action='store_true', default=False)
+    parser.add_argument("--wandb_group", type=str, default="Diva360_[date]")
+
     args = parser.parse_args(sys.argv[1:])
     if args.output_path == "":
-        args.output_path=args.model_path
+        args.output_path=args.model_path    
     if args.read_config and args.config_path is not None:
         with open(args.config_path, 'r') as f:
             config = json.load(f)
