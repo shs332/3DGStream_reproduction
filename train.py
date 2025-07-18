@@ -49,7 +49,6 @@ def training(dataset, opt, pipe, load_iteration, testing_iterations, saving_iter
     wandb.init(
         project=f"3DGStream_repr",
         entity="shs332", # change when error occurs
-        # name=f"{object_name}_frame{frame_from}to{frame_to}_cam{cam_idx}",
         name=f"{object_name}_recon",
         group=wandb_group,
         config={

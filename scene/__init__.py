@@ -33,6 +33,7 @@ class Scene:
         self.loaded_iter = None
         self.gaussians = gaussians
 
+        # breakpoint()
         if load_iteration:
             if load_iteration == -1:
                 self.loaded_iter = searchForMaxIteration(os.path.join(self.model_path, "point_cloud"))
@@ -109,7 +110,7 @@ class Scene:
             raise NotImplementedError('Not Implemented!')
 
     def dump_NTC(self):
-        NTC_path = os.path.join(self.output_path, "NTC.pth")
+        NTC_path = os.path.join(self.output_path, "NTC.pth") # models/Diva360/objname
         self.gaussians.ntc.dump(NTC_path)
 
     def getTrainCameras(self, scale=1.0):
