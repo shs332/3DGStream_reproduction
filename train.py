@@ -24,17 +24,40 @@ from tqdm import tqdm
 from utils.image_utils import psnr
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
+import wandb
+from torch.utils.data import Subset
+from utils.wandb_util import render_wandb_image
+
 try:
     from torch.utils.tensorboard import SummaryWriter
     TENSORBOARD_FOUND = True
 except ImportError:
     TENSORBOARD_FOUND = False
 
-def training(dataset, opt, pipe, load_iteration, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
+def training(dataset, opt, pipe, load_iteration, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from,
+             frame_from=None, frame_to=None, cam_idx=None, GESI=False, wandb_group=None):
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
-    scene = Scene(dataset, gaussians, load_iteration)
+
+    # breakpoint()
+    object_name = dataset.source_path.split("/")[-1]
+    scene = Scene(dataset, gaussians, load_iteration,
+                  frame_from=frame_from, frame_to=frame_to, cam_idx=cam_idx, GESI=GESI)
+    # wandb
+    wandb.init(
+        project=f"3DGStream_repr",
+        entity="shs332", # change when error occurs
+        # name=f"{object_name}_frame{frame_from}to{frame_to}_cam{cam_idx}",
+        name=f"{object_name}_recon",
+        group=wandb_group,
+        config={
+            "frame_from": frame_from,
+            "frame_to": frame_to,
+            "cam_idx": cam_idx
+        }
+    )
+ 
     gaussians.training_setup(opt)
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
@@ -51,20 +74,20 @@ def training(dataset, opt, pipe, load_iteration, testing_iterations, saving_iter
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
     for iteration in range(first_iter, opt.iterations + 1):        
-        if network_gui.conn == None:
-            network_gui.try_connect()
-        while network_gui.conn != None:
-            try:
-                net_image_bytes = None
-                custom_cam, do_training, pipe.convert_SHs_python, pipe.compute_cov3D_python, keep_alive, scaling_modifer = network_gui.receive()
-                if custom_cam != None:
-                    net_image = render(custom_cam, gaussians, pipe, background, scaling_modifer)["render"]
-                    net_image_bytes = memoryview((torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
-                network_gui.send(net_image_bytes, dataset.source_path)
-                if do_training and ((iteration < int(opt.iterations)) or not keep_alive):
-                    break
-            except Exception as e:
-                network_gui.conn = None
+        # if network_gui.conn == None:
+        #     network_gui.try_connect()
+        # while network_gui.conn != None:
+        #     try:
+        #         net_image_bytes = None
+        #         custom_cam, do_training, pipe.convert_SHs_python, pipe.compute_cov3D_python, keep_alive, scaling_modifer = network_gui.receive()
+        #         if custom_cam != None:
+        #             net_image = render(custom_cam, gaussians, pipe, background, scaling_modifer)["render"]
+        #             net_image_bytes = memoryview((torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
+        #         network_gui.send(net_image_bytes, dataset.source_path)
+        #         if do_training and ((iteration < int(opt.iterations)) or not keep_alive):
+        #             break
+        #     except Exception as e:
+        #         network_gui.conn = None
 
         iter_start.record()
 
@@ -78,12 +101,20 @@ def training(dataset, opt, pipe, load_iteration, testing_iterations, saving_iter
         for batch_iteraion in range(opt.batch_size):
             # Pick a random Camera
             if not viewpoint_stack:
-                viewpoint_stack = scene.getTrainCameras().copy()
-            viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
+                viewpoint_stack = scene.getTrainCameras() #.copy()
+                if GESI:
+                    viewpoint_stack = Subset(viewpoint_stack, list(range(len(viewpoint_stack) - 1))) # reconstructing
+                    
+            # breakpoint()
+            if GESI:
+                viewpoint_cam = next(iter(viewpoint_stack))
+            else:
+                viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
 
             # Render
             if (iteration - 1) == debug_from:
                 pipe.debug = True
+            # breakpoint()
             render_pkg = render(viewpoint_cam, gaussians, pipe, background)
             image, depth, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["depth"],render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
 
@@ -110,8 +141,19 @@ def training(dataset, opt, pipe, load_iteration, testing_iterations, saving_iter
             if iteration == opt.iterations:
                 progress_bar.close()
 
+            wandb_dict = {}
             # Log and save
-            training_report(tb_writer, iteration, Ll1, Lds, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background))
+            if GESI:
+                if iteration % 500 == 0:
+                    print("Rendering reconstruction in a viewpoint.")
+                    # breakpoint()
+                    image_dict = render_wandb_image(gaussians, [viewpoint_cam],
+                                                    render, pipe, background, iteration=iteration)
+                    # wandb_dict[f"3DGS[GT-Render]/ITER{iteration}"] = train_rend
+                    # wandb.log(wandb_dict, step=iteration)
+                    wandb.log(image_dict)
+            else:
+                training_report(tb_writer, iteration, Ll1, Lds, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background))
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration)
@@ -137,6 +179,8 @@ def training(dataset, opt, pipe, load_iteration, testing_iterations, saving_iter
             if (iteration in checkpoint_iterations):
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
+    # finish wandb
+    wandb.finish()
 
 def prepare_output_and_logger(args):    
     if not args.model_path:
@@ -202,18 +246,28 @@ def training_report(tb_writer, iteration, Ll1, Lds, loss, l1_loss, elapsed, test
         torch.cuda.empty_cache()
 
 def train_model(lp,op,pp,args):
+    """Train the model using the specified parameters.
+
+    Args:
+        lp (_type_): _description_
+        op (_type_): _description_
+        pp (_type_): _description_
+        args (_type_): _description_
+    """
     args.save_iterations.append(args.iterations)
     if args.depth_smooth==0:
         args.bwd_depth=False
     print("Optimizing " + args.model_path)
 
     # Initialize system state (RNG)
-    safe_state(args.quiet)
+    # safe_state(args.quiet)
 
     # Start GUI server, configure and run training
-    network_gui.init(args.ip, args.port)
+    # network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
-    training(lp.extract(args), op.extract(args), pp.extract(args), args.load_iteration, args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from)
+    
+    training(lp.extract(args), op.extract(args), pp.extract(args), args.load_iteration, args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from,
+             args.frame_from, args.frame_to, args.cam_idx, args.GESI, args.wandb_group)
 
     # All done
     print("\nTraining complete.")
@@ -236,6 +290,15 @@ if __name__ == "__main__":
     parser.add_argument("--start_checkpoint", type=str, default = None)
     parser.add_argument("--read_config", action='store_true', default=False)
     parser.add_argument("--config_path", type=str, default = None)
+
+    parser.add_argument("--frame_from", type=str)
+    parser.add_argument("--frame_to", type=str)
+    parser.add_argument("--cam_idx", type=str)
+    parser.add_argument("--GESI", action='store_true', default=False)
+    parser.add_argument("--wandb_group", type=str, default="Diva360_[date]")
+
+    # breakpoint()
+    
     args = parser.parse_args(sys.argv[1:])
     if args.output_path == "":
         args.output_path=args.model_path
