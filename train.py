@@ -27,6 +27,7 @@ from arguments import ModelParams, PipelineParams, OptimizationParams
 import wandb
 from torch.utils.data import Subset
 from utils.wandb_util import render_wandb_image
+import copy
 
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -73,6 +74,12 @@ def training(dataset, opt, pipe, load_iteration, testing_iterations, saving_iter
     ema_loss_for_log = 0.0
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
+    
+    if GESI:
+        temp_stack = scene.getTrainCameras() #.copy()
+        temp_stack = Subset(temp_stack, list(range(len(temp_stack) - 1))) # reconstructing
+        temp_stack = list(iter(temp_stack))
+        
     for iteration in range(first_iter, opt.iterations + 1):        
         # if network_gui.conn == None:
         #     network_gui.try_connect()
@@ -103,13 +110,9 @@ def training(dataset, opt, pipe, load_iteration, testing_iterations, saving_iter
             if not viewpoint_stack:
                 viewpoint_stack = scene.getTrainCameras() #.copy()
                 if GESI:
-                    viewpoint_stack = Subset(viewpoint_stack, list(range(len(viewpoint_stack) - 1))) # reconstructing
+                    viewpoint_stack = copy.deepcopy(temp_stack)
                     
-            # breakpoint()
-            if GESI:
-                viewpoint_cam = next(iter(viewpoint_stack))
-            else:
-                viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
+            viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
 
             # Render
             if (iteration - 1) == debug_from:
