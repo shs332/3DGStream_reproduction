@@ -363,7 +363,6 @@ def train_one_frame(lp,op,pp,args):
             training_one_frame(lp.extract(args), op.extract(args), pp.extract(args), args.load_iteration, args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from,\
                     frame_from=args.frame_from, frame_to=args.frame_to, cam_idx=args.cam_idx, GESI=args.GESI, wandb_group=args.wandb_group)
 
-        ## TODO: metric log
         # All done
         print("\nTraining complete.")
         print(f"Preparation: {pre_time}")

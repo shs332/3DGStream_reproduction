@@ -1,15 +1,8 @@
 #!/bin/bash
 
-# 원하는 구조로 심볼릭 링크를 생성하는 스크립트입니다.
-# 사용법: bash make_multipleview_symlinks.sh <output_dir>
-# 예시: bash make_multipleview_symlinks.sh /data2/wlsgur4011/GESI/myfolder
+# Usage: bash make_multipleview_symlinks.sh <output_dir>
 
-set -e
-
-# if [ $# -ne 1 ]; then
-#     echo "Usage: $0 <output_dir>"
-#     exit 1
-# fi
+set -ex
 
 SRC_ROOT="/data/rvi/dataset/Diva360_data/processed_data"
 OUTPUT_DIR="/data2/wlsgur4011/3DGStream_reproduction/data"
@@ -33,6 +26,7 @@ for object_name in $(ls "$SRC_ROOT"); do
             ln -sf "$img" "$CAM_DST/frame_${frame_num}"
         done
     done
+    
 
     TRAIN_JSONS="$SRC_ROOT/$object_name/transforms_train.json"
     TEST_JSONS="$SRC_ROOT/$object_name/transforms_test.json"
