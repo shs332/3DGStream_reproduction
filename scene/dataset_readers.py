@@ -249,12 +249,10 @@ def readNerfSyntheticInfo(path, white_background, eval, extension=".png"):
                            ply_path=ply_path)
     return scene_info
 
-##########################################
 def readDiva360info(datadir, frame_from, frame_to, cam_idx, white_background=True): 
-    # Diva360_dataset 생성
+    # Diva360_dataset creation
     from scene.Diva360 import Diva360_dataset
 
-    # breakpoint()
     print("\nLoading train camera infos...\n")
     train_cam_infos = Diva360_dataset(cam_folder=datadir, 
                                       split="train", frame_from=frame_from, frame_to=frame_to, cam_idx=cam_idx, white_background=white_background)
@@ -262,11 +260,10 @@ def readDiva360info(datadir, frame_from, frame_to, cam_idx, white_background=Tru
     print("\nLoading test camera infos...\n")
     test_cam_infos = Diva360_dataset(cam_folder=datadir, 
                                      split="test", frame_from=None, frame_to=frame_to, cam_idx=cam_idx, white_background=white_background)
-    # breakpoint()
-    # format_infos 함수를 사용하여 train_cam_infos 포맷 변환
+
     train_cam_infos_ = format_infos_DFAandDiva(train_cam_infos, "train")
     
-    # Normalization 계산
+    # (Radius, translate)
     nerf_normalization = getNerfppNorm(train_cam_infos_)
     print("\nScene radius: ", nerf_normalization["radius"])
     print("Scene translation: ", nerf_normalization["translate"], "\n")
@@ -275,7 +272,7 @@ def readDiva360info(datadir, frame_from, frame_to, cam_idx, white_background=Tru
     # 랜덤 포인트 클라우드 생성
     ply_path = os.path.join(datadir, "points3D_diva360.ply")
 
-    num_pts = 50000
+    num_pts = 30000
     print(f"Generating random point cloud ({num_pts})...")
 
     # We create random points inside the bounds of Diva360 (aabb=4)
@@ -288,8 +285,6 @@ def readDiva360info(datadir, frame_from, frame_to, cam_idx, white_background=Tru
     scene_info = SceneInfo(point_cloud=pcd,
                            train_cameras=train_cam_infos,
                            test_cameras=test_cam_infos,
-                        #    video_cameras=None,
-                        #    maxtime=1.0,
                            nerf_normalization=nerf_normalization,
                            ply_path=ply_path)
     

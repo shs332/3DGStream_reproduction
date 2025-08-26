@@ -3,7 +3,7 @@ object_name=$2
 idx_from=$3
 idx_to=$4
 cam_idx=$5
-wandb_group_name=$object_name
+wandb_group_name=$6
 
 CUDA_VISIBLE_DEVICES=$gpu_idx python train.py -s data/Diva360/$object_name \
     --frame_from $idx_from \
@@ -13,7 +13,7 @@ CUDA_VISIBLE_DEVICES=$gpu_idx python train.py -s data/Diva360/$object_name \
     --wandb_group $wandb_group_name \
     --model_path "models/Diva360/$object_name" &&
 
-CUDA_VISIBLE_DEVICES=$gpu_idx python ntc_warmup.py $object_name &&
+CUDA_VISIBLE_DEVICES=$gpu_idx python ntc_warmup.py "Diva360/$object_name" &&
 
 CUDA_VISIBLE_DEVICES=$gpu_idx python train_frames.py \
     -o output/Diva360/$object_name \

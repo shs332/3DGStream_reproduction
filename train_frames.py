@@ -48,11 +48,11 @@ def training_one_frame(dataset, opt, pipe, load_iteration, testing_iterations, s
     object_name = dataset.source_path.split("/")[-1]
     scene = Scene(dataset, gaussians, load_iteration,
                   frame_from=frame_from, frame_to=frame_to, cam_idx=cam_idx, GESI=GESI)
-    # wandb
+    
     wandb.init(
         project=f"3DGStream_repr",
         entity="shs332",
-        name=f"{object_name}_frame{frame_from}to{frame_to}_cam{cam_idx}",
+        name=f"{object_name}_{frame_from}to{frame_to}_cam{cam_idx}",
         group=wandb_group,
         config={
             "frame_from": frame_from,
@@ -122,8 +122,6 @@ def training_one_frame(dataset, opt, pipe, load_iteration, testing_iterations, s
 
         with torch.no_grad():
             wandb_dict = {}
-
-            ### TODO: metric log, rendered image log
             # Progress bar
             ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
             

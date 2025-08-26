@@ -64,7 +64,14 @@ if __name__ == "__main__":
     
     postfixs=['F_4']
     ntc_conf_paths=['configs/cache/cache_'+postfix+'.json' for postfix in postfixs]
-    pcd_path=f'models/Diva360/{args[0]}/point_cloud/iteration_15000/point_cloud.ply'
+    
+    # TODO: diva360/DFA selective path
+    # breakpoint()
+    
+    full_path = args[0]
+    dataset_name, object_name = os.path.split(full_path)
+    
+    pcd_path=f'models/{dataset_name}/{object_name}/point_cloud/iteration_15000/point_cloud.ply'
     save_paths=[f'ntc/{args[0]}_'+postfix+'.pth' for postfix in postfixs]
     ntcs=[]
     
