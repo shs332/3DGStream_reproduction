@@ -99,7 +99,7 @@ def training_one_frame(dataset, opt, pipe, load_iteration, testing_iterations, s
             if not viewpoint_stack:
                 viewpoint_stack = scene.getTrainCameras() #.copy()
                 if GESI:
-                    viewpoint_stack = Subset(viewpoint_stack, [-1])
+                    viewpoint_stack = Subset(viewpoint_stack, [-1]) # single image for training
 
             # breakpoint()
             viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1)) if not GESI else viewpoint_stack[0] # single image to deform
@@ -250,8 +250,12 @@ def training_one_frame(dataset, opt, pipe, load_iteration, testing_iterations, s
             if s2_res is not None:
                 last_s2_res.append(s2_res)
             if (iteration in saving_iterations):
-                print("\n[ITER {}] Saving Gaussians".format(iteration))
-                scene.save(iteration=iteration, save_type='added')
+                if GESI:
+                    print("\n[ITER {}] Saving Gaussians".format(iteration))
+                    scene.save(iteration=iteration, save_type='all') # save all gaussians
+                else:
+                    print("\n[ITER {}] Saving Gaussians".format(iteration))
+                    scene.save(iteration=iteration, save_type='added') # save only cloned gaussians
                       
             # Densification
             if (iteration - opt.iterations) % opt.densification_interval == 0:
@@ -439,7 +443,7 @@ if __name__ == "__main__":
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
     parser.add_argument("--test_iterations", nargs="+", type=int, default=[1, 50, 100])
-    parser.add_argument("--save_iterations", nargs="+", type=int, default=[1, 50, 100])
+    parser.add_argument("--save_iterations", nargs="+", type=int, default=[1, 50, 100, 250])
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
