@@ -43,12 +43,19 @@ class Scene:
 
         self.train_cameras = {}
         self.test_cameras = {}
-
-        # Diva360 
+        self.dataset_type = 'else'
+        # Diva360 and DFA
         if GESI:
-            # breakpoint()
             print("Single Image Deformation Experiment")
-            scene_info = sceneLoadTypeCallbacks["Diva360"](args.source_path, frame_from, frame_to, cam_idx, True)
+            temp, object_name = os.path.split(args.model_path)
+            _, dataset_type = os.path.split(temp)
+            
+            if dataset_type == "Diva360":
+                scene_info = sceneLoadTypeCallbacks["Diva360"](args.source_path, frame_from, frame_to, cam_idx, True)
+                self.dataset_type = 'Diva360'
+            elif dataset_type == "DFA":
+                scene_info = sceneLoadTypeCallbacks["DFA"](args.source_path, frame_from, frame_to, cam_idx, True)
+                self.dataset_type = 'DFA'
 
         elif os.path.exists(os.path.join(args.source_path, "sparse")):
             scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval, ply_name=args.ply_name)
@@ -57,7 +64,6 @@ class Scene:
             scene_info = sceneLoadTypeCallbacks["Blender"](args.source_path, args.white_background, args.eval)
         else:
             assert False, "Could not recognize scene type!"
-
         # if not self.loaded_iter:
         #     with open(scene_info.ply_path, 'rb') as src_file, open(os.path.join(self.output_path, "input.ply") , 'wb') as dest_file:
         #         dest_file.write(src_file.read())

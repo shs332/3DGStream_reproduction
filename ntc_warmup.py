@@ -26,13 +26,19 @@ def fetchXYZ(path):
     return torch.tensor(xyz, dtype=torch.float, device="cuda")
 
 def get_xyz_bound(xyz, percentile=80):
-    ## Hard-code the coordinate of the corners here!!
-    return torch.tensor([-4, -4, -4]).cuda(), torch.tensor([4, 4, 4]).cuda()
+    # breakpoint()
+    xyz_max = xyz.max(dim=0).values.detach().clone().to("cuda")
+    xyz_min = xyz.min(dim=0).values.detach().clone().to("cuda")
+
+    # temp_min = torch.tensor([-4,-4,-4]).cuda()
+    # temp_max = torch.tensor([4,4,4]).cuda()
+    # breakpoint()
+    return xyz_min, xyz_max
 
 def get_contracted_xyz(xyz):
     xyz_bound_min, xyz_bound_max = get_xyz_bound(xyz, 80)
-    normalzied_xyz=(xyz-xyz_bound_min)/(xyz_bound_max-xyz_bound_min)
-    return normalzied_xyz
+    normalized=(xyz-xyz_bound_min)/(xyz_bound_max-xyz_bound_min)
+    return normalized
 
 @torch.compile
 def quaternion_multiply(a, b):
@@ -56,6 +62,7 @@ def quaternion_loss(q1, q2):
 def l1loss(network_output, gt):
     return torch.abs((network_output - gt)).mean()
 
+dataset_name = 'default'
 
 if __name__ == "__main__":
     
@@ -65,14 +72,12 @@ if __name__ == "__main__":
     postfixs=['F_4']
     ntc_conf_paths=['configs/cache/cache_'+postfix+'.json' for postfix in postfixs]
     
-    # TODO: diva360/DFA selective path
-    # breakpoint()
-    
     full_path = args[0]
     dataset_name, object_name = os.path.split(full_path)
-    
+    os.makedirs(f'ntc/{dataset_name}', exist_ok=True)
+
     pcd_path=f'models/{dataset_name}/{object_name}/point_cloud/iteration_15000/point_cloud.ply'
-    save_paths=[f'ntc/{args[0]}_'+postfix+'.pth' for postfix in postfixs]
+    save_paths=[f'ntc/{dataset_name}/{object_name}_'+postfix+'.pth' for postfix in postfixs]
     ntcs=[]
     
     for ntc_conf_path in ntc_conf_paths:    
@@ -81,10 +86,11 @@ if __name__ == "__main__":
         ntc=tcnn.NetworkWithInputEncoding(n_input_dims=3, n_output_dims=8, encoding_config=ntc_conf["encoding"], network_config=ntc_conf["network"]).to(torch.device("cuda"))
         ntc_optimizer = torch.optim.Adam(ntc.parameters(), lr=1e-4)
         xyz=fetchXYZ(pcd_path)
-        normalzied_xyz=get_contracted_xyz(xyz)
-        mask = (normalzied_xyz >= 0) & (normalzied_xyz <= 1)
+        # breakpoint()
+        normalized_xyz=get_contracted_xyz(xyz)
+        mask = (normalized_xyz >= 0) & (normalized_xyz <= 1)
         mask = mask.all(dim=1)
-        ntc_inputs=torch.cat([normalzied_xyz[mask]],dim=-1)
+        ntc_inputs=torch.cat([normalized_xyz[mask]],dim=-1)
         noisy_inputs = ntc_inputs + 0.01 * torch.rand_like(ntc_inputs)
         d_xyz_gt=torch.tensor([0.,0.,0.]).cuda()
         d_rot_gt=torch.tensor([1.,0.,0.,0.]).cuda()

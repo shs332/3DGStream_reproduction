@@ -727,8 +727,8 @@ class GaussianModel:
         with torch.no_grad():
             xyz = self.get_xyz
             xyz_bound_min, xyz_bound_max = self.get_xyz_bound(86.6)
-            normalzied_xyz=(xyz-xyz_bound_min)/(xyz_bound_max-xyz_bound_min)
-            return normalzied_xyz
+            normalized_xyz=(xyz-xyz_bound_min)/(xyz_bound_max-xyz_bound_min)
+            return normalized_xyz
     
     def get_xyz_bound(self, percentile=86.6):
         with torch.no_grad():

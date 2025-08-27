@@ -277,7 +277,7 @@ def readDiva360info(datadir, frame_from, frame_to, cam_idx, white_background=Tru
 
     # We create random points inside the bounds of Diva360 (aabb=4)
     xyz = np.random.random((num_pts, 3)) * 2.6 - 1.3 
-    shs = np.random.random((num_pts, 3)) / 255.0
+    shs = np.random.random((num_pts, 3)) #/ 255.0
     
     pcd = BasicPointCloud(points=xyz, colors=SH2RGB(shs), normals=np.zeros((num_pts, 3)))
 
@@ -311,9 +311,46 @@ def format_infos_DFAandDiva(dataset,split):
 
     return cameras
 
+def readDFAinfo(datadir, frame_from, frame_to, cam_idx, white_background):
+    from scene.DFA import DFA_dataset
+    print("Loading train camera infos...")
+    train_cam_infos = DFA_dataset(cam_folder=datadir, 
+                                      split="train", frame_from=frame_from, frame_to=frame_to, cam_idx=cam_idx, white_background=white_background)
+        
+    print("Loading test camera infos...")
+    test_cam_infos = DFA_dataset(cam_folder=datadir, 
+                                     split="test", frame_from=frame_from, frame_to=frame_to, cam_idx=cam_idx, white_background=white_background)
+
+    ### TODO
+    # breakpoint()
+    train_cam_infos_ = format_infos_DFAandDiva(train_cam_infos, "train")
+    
+    # Normalization 계산
+    nerf_normalization = getNerfppNorm(train_cam_infos_)
+    print("\nScene radius: ", nerf_normalization["radius"])
+    print("Scene translation: ", nerf_normalization["translate"], "\n")
+    # breakpoint()
+    
+    ply_path = os.path.join(datadir, "points3D_DFA.ply")
+    num_pts = 20000
+    print(f"Generating random point cloud ({num_pts})...")
+    xyz = np.random.random((num_pts, 3)) * 2 * nerf_normalization["radius"] - nerf_normalization["radius"]
+    shs = np.random.random((num_pts, 3)) #/ 255.0
+    
+    pcd = BasicPointCloud(points=xyz, colors=SH2RGB(shs), normals=np.zeros((num_pts, 3)))
+
+    # SceneInfo 생성 및 반환
+    scene_info = SceneInfo(point_cloud=pcd,
+                           train_cameras=train_cam_infos,
+                           test_cameras=test_cam_infos,
+                           nerf_normalization=nerf_normalization,
+                           ply_path=ply_path)
+
+    return scene_info
 
 sceneLoadTypeCallbacks = {
     "Colmap": readColmapSceneInfo,
     "Blender" : readNerfSyntheticInfo,
-    "Diva360" : readDiva360info
+    "Diva360" : readDiva360info,
+    "DFA": readDFAinfo
 }

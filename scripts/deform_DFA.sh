@@ -1,0 +1,34 @@
+gpu_idx=$1
+object_name=$2
+idx_from=$3
+idx_to=$4
+cam_idx=$5
+wandb_group_name=$6
+
+CUDA_VISIBLE_DEVICES=$gpu_idx python train.py -s data/DFA/$object_name \
+    --frame_from $idx_from \
+    --frame_to $idx_to \
+    --cam_idx $cam_idx \
+    --GESI \
+    --wandb_group $wandb_group_name \
+    --model_path "models/DFA/$object_name" &&
+# output ply at model_path
+
+# generate ntc pth
+CUDA_VISIBLE_DEVICES=$gpu_idx python ntc_warmup.py "DFA/$object_name" &&
+
+# output at output_path
+CUDA_VISIBLE_DEVICES=$gpu_idx python train_frames.py \
+    -o output/DFA/$object_name \
+    -m models/DFA/$object_name \
+    -v data/DFA/$object_name \
+    --ntc_conf_path configs/cache/cache_F_4.json \
+    --ntc_path ntc/DFA/${object_name}_F_4.pth \
+    --first_load_iteration 15000 \
+    --frame_from $idx_from \
+    --frame_to $idx_to \
+    --cam_idx $cam_idx \
+    --GESI \
+    --wandb_group $wandb_group_name \
+    --iterations 150 \
+    --iterations_s2 100

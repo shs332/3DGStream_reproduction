@@ -389,15 +389,14 @@ def train_one_frame(lp,op,pp,args):
 def train_frames(lp, op, pp, args):
     # Initialize system state (RNG)
     # safe_state(args.quiet)
-    if args.GESI is True:
-        
+    if args.GESI:
         args.load_iteration = args.first_load_iteration
         frame = args.frame_to
         start_time = time.time()
         # breakpoint()
         args.source_path = args.video_path
         train_one_frame(lp,op,pp,args)
-        print(f"Frame {frame} finished in {time.time()-start_time} seconds.")
+        print(f"Deform to frame {frame} finished in {time.time()-start_time} seconds.")
         model_path = args.output_path
         # args.load_iteration = load_iteration
         torch.cuda.empty_cache()
