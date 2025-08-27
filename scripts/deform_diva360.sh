@@ -12,9 +12,12 @@ CUDA_VISIBLE_DEVICES=$gpu_idx python train.py -s data/Diva360/$object_name \
     --GESI \
     --wandb_group $wandb_group_name \
     --model_path "models/Diva360/$object_name" &&
+# output ply at model_path
 
+# generate ntc pth
 CUDA_VISIBLE_DEVICES=$gpu_idx python ntc_warmup.py "Diva360/$object_name" &&
 
+# output at output_path
 CUDA_VISIBLE_DEVICES=$gpu_idx python train_frames.py \
     -o output/Diva360/$object_name \
     -m models/Diva360/$object_name \
